@@ -134,6 +134,14 @@
       </button>
       <div class="dd-panel" id="catPanel"></div>
     </div>
+    <div class="cat-dd" id="sortDD">
+      <button class="dd-btn" id="sortBtn" aria-haspopup="true" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h13M4 12h9M4 18h5"/><path d="M17 15l3 3 3-3M20 18V8"/></svg>
+        <span id="sortLabel">الترتيب</span>
+        <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="dd-panel" id="sortPanel"></div>
+    </div>
     <button class="fav-toggle" id="favToggle">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.9-10-9.3C.3 8 1.7 4 5.4 3.1 8 2.5 10.4 3.7 12 6.2 13.6 3.7 16 2.5 18.6 3.1 22.3 4 23.7 8 22 11.7 19.5 16.1 12 21 12 21z"/></svg>
       المفضلة
@@ -156,7 +164,32 @@
   const FAV_KEY='hessah_favs';
   let favs={}; try{ favs=JSON.parse(localStorage.getItem(FAV_KEY)||'{}'); }catch(e){ favs={}; }
   function saveFavs(){ try{ localStorage.setItem(FAV_KEY, JSON.stringify(favs)); }catch(e){} }
-  let activeCat='الكل', favOnly=false, query='';
+  let activeCat='الكل', favOnly=false, query='', activeSort='default';
+
+  // ---- sorting: missing values always sink to the bottom ----
+  const SORTS=[{key:'default',label:'الافتراضي'},{key:'rating',label:'الأعلى تقييماً'},
+               {key:'reviews',label:'الأكثر مراجعات'},{key:'price_asc',label:'السعر: الأقل أولاً'},
+               {key:'price_desc',label:'السعر: الأعلى أولاً'}];
+  const numOf=v=>(v===null||v===undefined||v==='')?null:Number(v);
+  function byMissingLast(x,y,dir){
+    if(x===null&&y===null) return 0;
+    if(x===null) return 1;
+    if(y===null) return -1;
+    return dir==='asc' ? x-y : y-x;
+  }
+  function sortList(arr){
+    const a=arr.slice();
+    if(activeSort==='rating')
+      a.sort((p,q)=>byMissingLast(numOf(p.rating),numOf(q.rating),'desc')
+                    || byMissingLast(numOf(p.reviews),numOf(q.reviews),'desc'));
+    else if(activeSort==='reviews')
+      a.sort((p,q)=>byMissingLast(numOf(p.reviews),numOf(q.reviews),'desc'));
+    else if(activeSort==='price_asc')
+      a.sort((p,q)=>byMissingLast(numOf(p.price),numOf(q.price),'asc'));
+    else if(activeSort==='price_desc')
+      a.sort((p,q)=>byMissingLast(numOf(p.price),numOf(q.price),'desc'));
+    return a;
+  }
   function esc(s){ return (s||'').replace(/[&<>]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
   function escAttr(s){ return (s||'').replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
   function filtered(){
@@ -199,7 +232,7 @@
     </div>`;
   }
   function rerender(){
-    current=filtered(); shown=0; grid.innerHTML='';
+    current=sortList(filtered()); shown=0; grid.innerHTML='';
     if(current.length===0){ grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><h3>لا توجد منتجات مطابقة</h3><p>جرّب تعديل البحث أو اختيار قسم آخر.</p></div>`; return; }
     appendMore();
   }
@@ -215,10 +248,21 @@
     catPanel.innerHTML=all.map(c=>`<button class="dd-item${activeCat===c.key?' active':''}" data-cat="${escAttr(c.key)}"><span>${esc(c.name)}</span><span class="n">${c.count}</span></button>`).join('');
     catLabel.textContent = activeCat==='الكل' ? 'كل التصنيفات' : activeCat;
   }
-  function closeDD(){ catDD.classList.remove('open'); catBtn.setAttribute('aria-expanded','false'); }
-  catBtn.addEventListener('click', e=>{ e.stopPropagation(); const o=catDD.classList.toggle('open'); catBtn.setAttribute('aria-expanded', o?'true':'false'); });
+  const sortDD=document.getElementById('sortDD'), sortBtn=document.getElementById('sortBtn'),
+        sortPanel=document.getElementById('sortPanel'), sortLabel=document.getElementById('sortLabel');
+  function renderSortPanel(){
+    sortPanel.innerHTML=SORTS.map(s=>`<button class="dd-item${activeSort===s.key?' active':''}" data-sort="${s.key}"><span>${esc(s.label)}</span></button>`).join('');
+    sortLabel.textContent = activeSort==='default' ? 'الترتيب' : SORTS.find(s=>s.key===activeSort).label;
+  }
+  function closeDD(){
+    catDD.classList.remove('open'); catBtn.setAttribute('aria-expanded','false');
+    sortDD.classList.remove('open'); sortBtn.setAttribute('aria-expanded','false');
+  }
+  catBtn.addEventListener('click', e=>{ e.stopPropagation(); const o=!catDD.classList.contains('open'); closeDD(); catDD.classList.toggle('open',o); catBtn.setAttribute('aria-expanded', o?'true':'false'); });
+  sortBtn.addEventListener('click', e=>{ e.stopPropagation(); const o=!sortDD.classList.contains('open'); closeDD(); sortDD.classList.toggle('open',o); sortBtn.setAttribute('aria-expanded', o?'true':'false'); });
   catPanel.addEventListener('click', e=>{ const b=e.target.closest('.dd-item'); if(!b) return; activeCat=b.dataset.cat; renderCatPanel(); closeDD(); rerender(); });
-  document.addEventListener('click', e=>{ if(!catDD.contains(e.target)) closeDD(); });
+  sortPanel.addEventListener('click', e=>{ const b=e.target.closest('.dd-item'); if(!b) return; activeSort=b.dataset.sort; renderSortPanel(); closeDD(); rerender(); window.scrollTo({top:0,behavior:'smooth'}); });
+  document.addEventListener('click', e=>{ if(!catDD.contains(e.target) && !sortDD.contains(e.target)) closeDD(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDD(); });
   grid.addEventListener('click', e=>{
     const b=e.target.closest('.fav-btn'); if(!b) return;
@@ -230,7 +274,7 @@
   let qt; document.getElementById('q').addEventListener('input', e=>{ query=e.target.value; clearTimeout(qt); qt=setTimeout(rerender,160); });
   const favBtn=document.getElementById('favToggle');
   favBtn.addEventListener('click', ()=>{ favOnly=!favOnly; favBtn.classList.toggle('on', favOnly); rerender(); });
-  renderCatPanel(); rerender();
+  renderCatPanel(); renderSortPanel(); rerender();
 })();
 </script>
 
